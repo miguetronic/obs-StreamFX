@@ -43,8 +43,7 @@ streamfx::configuration::configuration() : _config_path(), _data(), _task_lock()
 		if (!std::filesystem::exists(_config_path) || !std::filesystem::is_regular_file(_config_path)) {
 			throw std::runtime_error("Configuration does not exist.");
 		} else {
-			obs_data_t* data =
-				obs_data_create_from_json_file_safe(_config_path.u8string().c_str(), path_backup_ext.data());
+			obs_data_t* data = obs_data_create_from_json_file_safe(_config_path.u8string().c_str(), path_backup_ext.data());
 			if (!data) {
 				throw std::runtime_error("Failed to load configuration from disk.");
 			} else {
@@ -70,8 +69,7 @@ void streamfx::configuration::save()
 			if (_config_path.has_parent_path()) {
 				std::filesystem::create_directories(_config_path.parent_path());
 			}
-			if (!obs_data_save_json_safe(_data.get(), _config_path.u8string().c_str(), ".tmp",
-										 path_backup_ext.data())) {
+			if (!obs_data_save_json_safe(_data.get(), _config_path.u8string().c_str(), ".tmp", path_backup_ext.data())) {
 				D_LOG_ERROR("Failed to save configuration file.", nullptr);
 			}
 		});
@@ -94,20 +92,27 @@ bool streamfx::configuration::is_different_version()
 	return (version() & STREAMFX_MASK_COMPAT) != (STREAMFX_VERSION & STREAMFX_MASK_COMPAT);
 }
 
-static std::shared_ptr<streamfx::configuration> _instance = nullptr;
-
-void streamfx::configuration::initialize()
-{
-	if (!_instance)
-		_instance = std::make_shared<streamfx::configuration>();
-}
-
-void streamfx::configuration::finalize()
-{
-	_instance.reset();
-}
-
 std::shared_ptr<streamfx::configuration> streamfx::configuration::instance()
 {
-	return _instance;
+	static std::weak_ptr<streamfx::configuration> winst;
+	static std::mutex                             mtx;
+
+	std::unique_lock<decltype(mtx)> lock(mtx);
+	auto                            instance = winst.lock();
+	if (!instance) {
+		instance = std::shared_ptr<streamfx::configuration>(new streamfx::configuration());
+		winst    = instance;
+	}
+	return instance;
 }
+
+static std::shared_ptr<streamfx::configuration> loader_instance;
+
+static auto loader = streamfx::loader(
+	[]() { // Initalizer
+		loader_instance = streamfx::configuration::instance();
+	},
+	[]() { // Finalizer
+		loader_instance.reset();
+	},
+	streamfx::loader_priority::HIGHER); // Attempt to load after critical functionality.

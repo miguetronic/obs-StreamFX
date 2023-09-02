@@ -7,62 +7,9 @@
 #include "gfx/gfx-opengl.hpp"
 #include "obs/gs/gs-helper.hpp"
 #include "obs/gs/gs-vertexbuffer.hpp"
-#include "obs/obs-source-tracker.hpp"
 
 #ifdef ENABLE_NVIDIA_CUDA
 #include "nvidia/cuda/nvidia-cuda-obs.hpp"
-#endif
-
-#ifdef ENABLE_ENCODER_AOM_AV1
-#include "encoders/encoder-aom-av1.hpp"
-#endif
-#ifdef ENABLE_ENCODER_FFMPEG
-#include "encoders/encoder-ffmpeg.hpp"
-#endif
-
-#ifdef ENABLE_FILTER_AUTOFRAMING
-#include "filters/filter-autoframing.hpp"
-#endif
-#ifdef ENABLE_FILTER_BLUR
-#include "filters/filter-blur.hpp"
-#endif
-#ifdef ENABLE_FILTER_COLOR_GRADE
-#include "filters/filter-color-grade.hpp"
-#endif
-#ifdef ENABLE_FILTER_DENOISING
-#include "filters/filter-denoising.hpp"
-#endif
-#ifdef ENABLE_FILTER_DISPLACEMENT
-#include "filters/filter-displacement.hpp"
-#endif
-#ifdef ENABLE_FILTER_DYNAMIC_MASK
-#include "filters/filter-dynamic-mask.hpp"
-#endif
-#ifdef ENABLE_FILTER_SDF_EFFECTS
-#include "filters/filter-sdf-effects.hpp"
-#endif
-#ifdef ENABLE_FILTER_SHADER
-#include "filters/filter-shader.hpp"
-#endif
-#ifdef ENABLE_FILTER_TRANSFORM
-#include "filters/filter-transform.hpp"
-#endif
-#ifdef ENABLE_FILTER_UPSCALING
-#include "filters/filter-upscaling.hpp"
-#endif
-#ifdef ENABLE_FILTER_VIRTUAL_GREENSCREEN
-#include "filters/filter-virtual-greenscreen.hpp"
-#endif
-
-#ifdef ENABLE_SOURCE_MIRROR
-#include "sources/source-mirror.hpp"
-#endif
-#ifdef ENABLE_SOURCE_SHADER
-#include "sources/source-shader.hpp"
-#endif
-
-#ifdef ENABLE_TRANSITION_SHADER
-#include "transitions/transition-shader.hpp"
 #endif
 
 #ifdef ENABLE_FRONTEND
@@ -71,31 +18,57 @@
 
 #ifdef ENABLE_UPDATER
 #include "updater.hpp"
-//static std::shared_ptr<streamfx::updater> _updater;
 #endif
 
 #include "warning-disable.hpp"
 #include <fstream>
+#include <list>
+#include <map>
 #include <stdexcept>
 #include "warning-enable.hpp"
 
-static std::shared_ptr<streamfx::util::threadpool::threadpool> _threadpool;
-static std::shared_ptr<streamfx::gfx::opengl>                  _streamfx_gfx_opengl;
-static std::shared_ptr<streamfx::obs::source_tracker>          _source_tracker;
+static std::shared_ptr<streamfx::gfx::opengl> _streamfx_gfx_opengl;
+
+namespace streamfx {
+	typedef std::list<loader_function_t>               loader_list_t;
+	typedef std::map<loader_priority_t, loader_list_t> loader_map_t;
+
+	loader_map_t& get_initializers()
+	{
+		static loader_map_t initializers;
+		return initializers;
+	}
+
+	loader_map_t& get_finalizers()
+	{
+		static loader_map_t finalizers;
+		return finalizers;
+	}
+
+	loader::loader(loader_function_t initializer, loader_function_t finalizer, loader_priority_t priority)
+	{
+		auto init_kv = get_initializers().find(priority);
+		if (init_kv != get_initializers().end()) {
+			init_kv->second.push_back(initializer);
+		} else {
+			get_initializers().emplace(priority, loader_list_t{initializer});
+		}
+
+		// Invert the order for finalizers.
+		auto ipriority = priority ^ static_cast<loader_priority_t>(0xFFFFFFFFFFFFFFFF);
+		auto fina_kv   = get_finalizers().find(ipriority);
+		if (fina_kv != get_finalizers().end()) {
+			fina_kv->second.push_back(finalizer);
+		} else {
+			get_finalizers().emplace(ipriority, loader_list_t{finalizer});
+		}
+	}
+} // namespace streamfx
 
 MODULE_EXPORT bool obs_module_load(void)
 {
 	try {
 		DLOG_INFO("Loading Version %s", STREAMFX_VERSION_STRING);
-
-		// Initialize global configuration.
-		streamfx::configuration::initialize();
-
-		// Initialize global Thread Pool.
-		_threadpool = std::make_shared<streamfx::util::threadpool::threadpool>();
-
-		// Initialize Source Tracker
-		_source_tracker = streamfx::obs::source_tracker::get();
 
 		// Initialize GLAD (OpenGL)
 		{
@@ -115,75 +88,18 @@ MODULE_EXPORT bool obs_module_load(void)
 		}
 #endif
 
-		// Encoders
-		{
-#ifdef ENABLE_ENCODER_AOM_AV1
-			streamfx::encoder::aom::av1::aom_av1_factory::initialize();
-#endif
-#ifdef ENABLE_ENCODER_FFMPEG
-			using namespace streamfx::encoder::ffmpeg;
-			ffmpeg_manager::initialize();
-#endif
+		// Run all initializers.
+		for (auto kv : streamfx::get_initializers()) {
+			for (auto init : kv.second) {
+				try {
+					init();
+				} catch (const std::exception& ex) {
+					DLOG_ERROR("Initializer threw exception: %s", ex.what());
+				} catch (...) {
+					DLOG_ERROR("Initializer threw unknown exception.");
+				}
+			}
 		}
-
-		// Filters
-		{
-#ifdef ENABLE_FILTER_AUTOFRAMING
-			streamfx::filter::autoframing::autoframing_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_BLUR
-			streamfx::filter::blur::blur_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_COLOR_GRADE
-			streamfx::filter::color_grade::color_grade_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_DENOISING
-			streamfx::filter::denoising::denoising_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_DISPLACEMENT
-			streamfx::filter::displacement::displacement_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_DYNAMIC_MASK
-			streamfx::filter::dynamic_mask::dynamic_mask_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_SDF_EFFECTS
-			streamfx::filter::sdf_effects::sdf_effects_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_SHADER
-			streamfx::filter::shader::shader_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_TRANSFORM
-			streamfx::filter::transform::transform_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_UPSCALING
-			streamfx::filter::upscaling::upscaling_factory::initialize();
-#endif
-#ifdef ENABLE_FILTER_VIRTUAL_GREENSCREEN
-			streamfx::filter::virtual_greenscreen::virtual_greenscreen_factory::initialize();
-#endif
-		}
-
-		// Sources
-		{
-#ifdef ENABLE_SOURCE_MIRROR
-			streamfx::source::mirror::mirror_factory::initialize();
-#endif
-#ifdef ENABLE_SOURCE_SHADER
-			streamfx::source::shader::shader_factory::initialize();
-#endif
-		}
-
-		// Transitions
-		{
-#ifdef ENABLE_TRANSITION_SHADER
-			streamfx::transition::shader::shader_factory::initialize();
-#endif
-		}
-
-// Frontend
-#ifdef ENABLE_FRONTEND
-		streamfx::ui::handler::initialize();
-#endif
 
 		DLOG_INFO("Loaded Version %s", STREAMFX_VERSION_STRING);
 		return true;
@@ -201,73 +117,17 @@ MODULE_EXPORT void obs_module_unload(void)
 	try {
 		DLOG_INFO("Unloading Version %s", STREAMFX_VERSION_STRING);
 
-		// Frontend
-#ifdef ENABLE_FRONTEND
-		streamfx::ui::handler::finalize();
-#endif
-
-		// Transitions
-		{
-#ifdef ENABLE_TRANSITION_SHADER
-			streamfx::transition::shader::shader_factory::finalize();
-#endif
-		}
-
-		// Sources
-		{
-#ifdef ENABLE_SOURCE_MIRROR
-			streamfx::source::mirror::mirror_factory::finalize();
-#endif
-#ifdef ENABLE_SOURCE_SHADER
-			streamfx::source::shader::shader_factory::finalize();
-#endif
-		}
-
-		// Filters
-		{
-#ifdef ENABLE_FILTER_AUTOFRAMING
-			streamfx::filter::autoframing::autoframing_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_BLUR
-			streamfx::filter::blur::blur_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_COLOR_GRADE
-			streamfx::filter::color_grade::color_grade_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_DENOISING
-			streamfx::filter::denoising::denoising_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_DISPLACEMENT
-			streamfx::filter::displacement::displacement_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_DYNAMIC_MASK
-			streamfx::filter::dynamic_mask::dynamic_mask_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_SDF_EFFECTS
-			streamfx::filter::sdf_effects::sdf_effects_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_SHADER
-			streamfx::filter::shader::shader_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_TRANSFORM
-			streamfx::filter::transform::transform_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_UPSCALING
-			streamfx::filter::upscaling::upscaling_factory::finalize();
-#endif
-#ifdef ENABLE_FILTER_VIRTUAL_GREENSCREEN
-			streamfx::filter::virtual_greenscreen::virtual_greenscreen_factory::finalize();
-#endif
-		}
-
-		// Encoders
-		{
-#ifdef ENABLE_ENCODER_FFMPEG
-			streamfx::encoder::ffmpeg::ffmpeg_manager::finalize();
-#endif
-#ifdef ENABLE_ENCODER_AOM_AV1
-			streamfx::encoder::aom::av1::aom_av1_factory::finalize();
-#endif
+		// Run all finalizers.
+		for (auto kv : streamfx::get_finalizers()) {
+			for (auto init : kv.second) {
+				try {
+					init();
+				} catch (const std::exception& ex) {
+					DLOG_ERROR("Finalizer threw exception: %s", ex.what());
+				} catch (...) {
+					DLOG_ERROR("Finalizer threw unknown exception.");
+				}
+			}
 		}
 
 		// Finalize GLAD (OpenGL)
@@ -275,20 +135,6 @@ MODULE_EXPORT void obs_module_unload(void)
 			streamfx::obs::gs::context gctx{};
 			_streamfx_gfx_opengl.reset();
 		}
-
-		// Finalize Source Tracker
-		_source_tracker.reset();
-
-		//	// Auto-Updater
-		//#ifdef ENABLE_UPDATER
-		//	_updater.reset();
-		//#endif
-
-		// Finalize Configuration
-		streamfx::configuration::finalize();
-
-		// Finalize Thread Pool
-		_threadpool.reset();
 
 		DLOG_INFO("Unloaded Version %s", STREAMFX_VERSION_STRING);
 	} catch (std::exception const& ex) {
@@ -300,7 +146,7 @@ MODULE_EXPORT void obs_module_unload(void)
 
 std::shared_ptr<streamfx::util::threadpool::threadpool> streamfx::threadpool()
 {
-	return _threadpool;
+	return streamfx::util::threadpool::threadpool::instance();
 }
 
 std::filesystem::path streamfx::data_file_path(std::string_view file)

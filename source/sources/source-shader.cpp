@@ -30,8 +30,7 @@
 
 using namespace streamfx::source::shader;
 
-static constexpr std::string_view HELP_URL =
-	"https://github.com/Xaymar/obs-StreamFX/wiki/Source-Filter-Transition-Shader";
+static constexpr std::string_view HELP_URL = "https://github.com/Xaymar/obs-StreamFX/wiki/Source-Filter-Transition-Shader";
 
 shader_instance::shader_instance(obs_data_t* data, obs_source_t* self) : obs::source_instance(data, self), _fx()
 {
@@ -87,8 +86,7 @@ void shader_instance::video_render(gs_effect_t* effect)
 	}
 
 #if defined(ENABLE_PROFILING) && !defined(D_PLATFORM_MAC) && _DEBUG
-	streamfx::obs::gs::debug_marker gdmp{streamfx::obs::gs::debug_color_source, "Shader Source '%s'",
-										 obs_source_get_name(_self)};
+	streamfx::obs::gs::debug_marker gdmp{streamfx::obs::gs::debug_color_source, "Shader Source '%s'", obs_source_get_name(_self)};
 #endif
 
 	_fx->prepare_render();
@@ -146,8 +144,7 @@ obs_properties_t* shader_factory::get_properties2(shader_instance* data)
 
 #ifdef ENABLE_FRONTEND
 	{
-		obs_properties_add_button2(pr, S_MANUAL_OPEN, D_TRANSLATE(S_MANUAL_OPEN),
-								   streamfx::source::shader::shader_factory::on_manual_open, nullptr);
+		obs_properties_add_button2(pr, S_MANUAL_OPEN, D_TRANSLATE(S_MANUAL_OPEN), streamfx::source::shader::shader_factory::on_manual_open, nullptr);
 	}
 #endif
 
@@ -174,26 +171,27 @@ bool shader_factory::on_manual_open(obs_properties_t* props, obs_property_t* pro
 }
 #endif
 
-std::shared_ptr<shader_factory> _source_shader_factory_instance = nullptr;
-
-void streamfx::source::shader::shader_factory::initialize()
+std::shared_ptr<shader_factory> shader_factory::instance()
 {
-	try {
-		if (!_source_shader_factory_instance)
-			_source_shader_factory_instance = std::make_shared<shader_factory>();
-	} catch (const std::exception& ex) {
-		D_LOG_ERROR("Failed to initialize due to error: %s", ex.what());
-	} catch (...) {
-		D_LOG_ERROR("Failed to initialize due to unknown error.", "");
+	static std::weak_ptr<shader_factory> winst;
+	static std::mutex                    mtx;
+
+	std::unique_lock<decltype(mtx)> lock(mtx);
+	auto                            instance = winst.lock();
+	if (!instance) {
+		instance = std::shared_ptr<shader_factory>(new shader_factory());
+		winst    = instance;
 	}
+	return instance;
 }
 
-void streamfx::source::shader::shader_factory::finalize()
-{
-	_source_shader_factory_instance.reset();
-}
+static std::shared_ptr<shader_factory> loader_instance;
 
-std::shared_ptr<shader_factory> streamfx::source::shader::shader_factory::get()
-{
-	return _source_shader_factory_instance;
-}
+static auto loader = streamfx::loader(
+	[]() { // Initalizer
+		loader_instance = shader_factory::instance();
+	},
+	[]() { // Finalizer
+		loader_instance.reset();
+	},
+	streamfx::loader_priority::NORMAL);

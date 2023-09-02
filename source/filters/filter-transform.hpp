@@ -80,8 +80,7 @@ namespace streamfx::filter::transform {
 		virtual void video_render(gs_effect_t*) override;
 	};
 
-	class transform_factory
-		: public obs::source_factory<filter::transform::transform_factory, filter::transform::transform_instance> {
+	class transform_factory : public obs::source_factory<filter::transform::transform_factory, filter::transform::transform_instance> {
 		public:
 		transform_factory();
 		virtual ~transform_factory() override;
@@ -97,10 +96,6 @@ namespace streamfx::filter::transform {
 #endif
 
 		public: // Singleton
-		static void initialize();
-
-		static void finalize();
-
-		static std::shared_ptr<transform_factory> get();
+		static std::shared_ptr<transform_factory> instance();
 	};
 } // namespace streamfx::filter::transform

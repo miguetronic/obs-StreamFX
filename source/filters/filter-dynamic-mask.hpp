@@ -109,8 +109,7 @@ namespace streamfx::filter::dynamic_mask {
 		void release();
 	};
 
-	class dynamic_mask_factory : public obs::source_factory<filter::dynamic_mask::dynamic_mask_factory,
-															filter::dynamic_mask::dynamic_mask_instance> {
+	class dynamic_mask_factory : public obs::source_factory<filter::dynamic_mask::dynamic_mask_factory, filter::dynamic_mask::dynamic_mask_instance> {
 		std::list<std::string> _translation_cache;
 
 		public:
@@ -134,6 +133,6 @@ namespace streamfx::filter::dynamic_mask {
 
 		static void finalize();
 
-		static std::shared_ptr<dynamic_mask_factory> get();
+		static std::shared_ptr<dynamic_mask_factory> instance();
 	};
 } // namespace streamfx::filter::dynamic_mask

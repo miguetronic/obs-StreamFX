@@ -5,10 +5,10 @@
 
 #pragma once
 #include "common.hpp"
+#include "encoders/ffmpeg/handler.hpp"
 #include "ffmpeg/avframe-queue.hpp"
 #include "ffmpeg/hwapi/base.hpp"
 #include "ffmpeg/swscale.hpp"
-#include "handlers/handler.hpp"
 #include "obs/obs-encoder-factory.hpp"
 
 #include "warning-disable.hpp"
@@ -17,26 +17,27 @@
 #include <mutex>
 #include <queue>
 #include <stack>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
-#include "warning-enable.hpp"
-
 extern "C" {
-#include "warning-disable.hpp"
 #include <libavcodec/avcodec.h>
 #include <libavutil/frame.h>
-#include "warning-enable.hpp"
 }
+#include "warning-enable.hpp"
 
 namespace streamfx::encoder::ffmpeg {
+	class ffmpeg_instance;
 	class ffmpeg_factory;
+	class ffmpeg_manager;
 
 	class ffmpeg_instance : public obs::encoder_instance {
 		ffmpeg_factory* _factory;
 		const AVCodec*  _codec;
 		AVCodecContext* _context;
 
-		std::shared_ptr<handler::handler> _handler;
+		streamfx::encoder::ffmpeg::handler* _handler;
 
 		::streamfx::ffmpeg::swscale _scaler;
 		std::shared_ptr<AVPacket>   _packet;
@@ -73,8 +74,7 @@ namespace streamfx::encoder::ffmpeg {
 
 		bool encode_video(struct encoder_frame* frame, struct encoder_packet* packet, bool* received_packet) override;
 
-		bool encode_video(uint32_t handle, int64_t pts, uint64_t lock_key, uint64_t* next_key,
-						  struct encoder_packet* packet, bool* received_packet) override;
+		bool encode_video(uint32_t handle, int64_t pts, uint64_t lock_key, uint64_t* next_key, struct encoder_packet* packet, bool* received_packet) override;
 
 		bool get_extra_data(uint8_t** extra_data, size_t* size) override;
 
@@ -103,7 +103,7 @@ namespace streamfx::encoder::ffmpeg {
 
 		const AVCodec* get_avcodec();
 
-		const AVCodecContext* get_avcodeccontext();
+		AVCodecContext* get_avcodeccontext();
 
 		void parse_ffmpeg_commandline(std::string_view text);
 	};
@@ -115,10 +115,10 @@ namespace streamfx::encoder::ffmpeg {
 
 		const AVCodec* _avcodec;
 
-		std::shared_ptr<handler::handler> _handler;
+		streamfx::encoder::ffmpeg::handler* _handler;
 
 		public:
-		ffmpeg_factory(const AVCodec* codec);
+		ffmpeg_factory(ffmpeg_manager* manager, const AVCodec* codec);
 		virtual ~ffmpeg_factory();
 
 		const char* get_name() override;
@@ -141,26 +141,18 @@ namespace streamfx::encoder::ffmpeg {
 
 	class ffmpeg_manager {
 		std::map<const AVCodec*, std::shared_ptr<ffmpeg_factory>> _factories;
-		std::map<std::string, std::shared_ptr<handler::handler>>  _handlers;
-		std::shared_ptr<handler::handler>                         _debug_handler;
 
 		public:
 		ffmpeg_manager();
 		~ffmpeg_manager();
 
-		void register_encoders();
+		streamfx::encoder::ffmpeg::handler* find_handler(std::string_view codec);
 
-		void register_handler(std::string codec, std::shared_ptr<handler::handler> handler);
-
-		std::shared_ptr<handler::handler> get_handler(std::string codec);
+		streamfx::encoder::ffmpeg::handler* get_handler(std::string_view codec);
 
 		bool has_handler(std::string_view codec);
 
 		public: // Singleton
-		static void initialize();
-
-		static void finalize();
-
-		static std::shared_ptr<ffmpeg_manager> get();
+		static std::shared_ptr<ffmpeg_manager> instance();
 	};
 } // namespace streamfx::encoder::ffmpeg

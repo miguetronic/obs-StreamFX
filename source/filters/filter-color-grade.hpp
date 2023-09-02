@@ -87,8 +87,7 @@ namespace streamfx::filter::color_grade {
 		virtual void video_render(gs_effect_t* effect) override;
 	};
 
-	class color_grade_factory : public obs::source_factory<filter::color_grade::color_grade_factory,
-														   filter::color_grade::color_grade_instance> {
+	class color_grade_factory : public obs::source_factory<filter::color_grade::color_grade_factory, filter::color_grade::color_grade_instance> {
 		public:
 		color_grade_factory();
 		virtual ~color_grade_factory();
@@ -104,10 +103,6 @@ namespace streamfx::filter::color_grade {
 #endif
 
 		public: // Singleton
-		static void initialize();
-
-		static void finalize();
-
-		static std::shared_ptr<color_grade_factory> get();
+		static std::shared_ptr<color_grade_factory> instance();
 	};
 } // namespace streamfx::filter::color_grade
